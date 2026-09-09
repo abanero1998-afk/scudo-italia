@@ -38,7 +38,6 @@ export default function ItalyMap({ reports, weather = [], onCamClick, flyTo }: P
       maxBounds: ITALY_BOUNDS,
       minZoom: 4.4,
       maxZoom: 16,
-      antialias: true,
       attributionControl: false,
     });
     mapRef.current = map;
