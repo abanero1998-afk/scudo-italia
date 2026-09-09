@@ -1,0 +1,10 @@
+{
+  "name": "SCUDO ITALIA",
+  "short_name": "SCUDO",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#ef4444",
+  "lang": "it",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
