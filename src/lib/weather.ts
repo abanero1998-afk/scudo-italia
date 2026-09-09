@@ -4,6 +4,7 @@ export type CityWeather = {
   precipProb: number | null; code: number | null; label: string;
   hailRisk: "basso" | "medio" | "alto" | "estremo";
 };
+export type WeatherMood = "sole" | "variabile" | "brutto";
 const WMO: Record<number, string> = {
   0: "Sereno", 1: "Prevalentemente sereno", 2: "Parzialmente nuvoloso", 3: "Coperto",
   45: "Nebbia", 48: "Nebbia ghiacciata", 51: "Pioviggine", 61: "Pioggia", 63: "Pioggia",
@@ -21,4 +22,23 @@ export function hailRisk(code: number | null, precipProb: number | null, wind: n
   if (code === 95 || ((precipProb ?? 0) >= 70 && (wind ?? 0) >= 40)) return "medio";
   if ((precipProb ?? 0) >= 50) return "medio";
   return "basso";
+}
+export function weatherIcon(code: number | null) {
+  if (code == null) return "·";
+  if (code <= 1) return "sole";
+  if (code === 2) return "nubi";
+  if (code === 3 || code === 45 || code === 48) return "coperto";
+  if (code >= 71 && code < 80) return "neve";
+  if (code >= 95) return "storm";
+  if (code >= 51) return "pioggia";
+  return "nubi";
+}
+export function italyMood(cities: CityWeather[]): WeatherMood {
+  if (!cities.length) return "variabile";
+  const storms = cities.filter((c) => (c.code ?? 0) >= 80 || c.hailRisk === "alto" || c.hailRisk === "estremo").length;
+  const rain = cities.filter((c) => (c.code ?? 0) >= 51 && (c.code ?? 0) < 80).length;
+  const sun = cities.filter((c) => (c.code ?? 0) <= 1).length;
+  if (storms >= 2 || storms + rain >= Math.ceil(cities.length * 0.4)) return "brutto";
+  if (sun >= Math.ceil(cities.length * 0.5) && storms === 0) return "sole";
+  return "variabile";
 }
