@@ -1,14 +1,11 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import ReportForm from "@/components/ReportForm";
+import ItalyMap from "@/components/ItalyMap";
 import { FALLBACK_REPORTS, LIVE_CAMS, relativeTime } from "@/lib/data";
 import { getSupabase, isSupabaseConfigured, type HailReport } from "@/lib/supabase";
 import type { CityWeather } from "@/lib/weather";
-
-const token = process.env.NEXT_PUBLIC_MAPBOX ?? "";
-if (token && !token.includes("REPLACE")) mapboxgl.accessToken = token;
 
 type Cam = (typeof LIVE_CAMS)[number];
 type Mode = "grandine" | "parcheggi" | "sos";
@@ -18,51 +15,14 @@ function toUi(r: HailReport): UiReport {
 }
 
 export default function ScudoItalia() {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapObj = useRef<mapboxgl.Map | null>(null);
-  const markers = useRef<mapboxgl.Marker[]>([]);
   const [selectedCam, setSelectedCam] = useState<Cam | null>(null);
   const [mode, setMode] = useState<Mode>("grandine");
   const [showForm, setShowForm] = useState(false);
   const [reports, setReports] = useState<UiReport[]>(FALLBACK_REPORTS.map((r) => ({ id: r.id, lat: r.lat, lng: r.lng, size: r.size, intensity: r.intensity, user: r.user, time: r.time })));
   const [pushOn, setPushOn] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-  const [tokenMissing, setTokenMissing] = useState(false);
   const [weather, setWeather] = useState<CityWeather[]>([]);
   const [wxAlerts, setWxAlerts] = useState<CityWeather[]>([]);
-
-  const addReportMarker = useCallback((map: mapboxgl.Map, r: UiReport) => {
-    const el = document.createElement("div");
-    el.className = "hail-pin";
-    el.innerHTML = '<div class="ping-dot"></div><div style="position:relative;width:24px;height:24px;background:#ef4444;border-radius:9999px;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:10px;">*</div>';
-    markers.current.push(new mapboxgl.Marker(el).setLngLat([r.lng, r.lat]).addTo(map));
-  }, []);
-
-  useEffect(() => {
-    if (!mapRef.current || mapObj.current) return;
-    if (!token || token.includes("REPLACE")) { setTokenMissing(true); return; }
-    const map = new mapboxgl.Map({ container: mapRef.current, style: "mapbox://styles/mapbox/dark-v11", center: [12.5, 42.5], zoom: 5.2, pitch: 60, bearing: -10, antialias: true });
-    mapObj.current = map;
-    map.on("load", () => {
-      map.addSource("mapbox-dem", { type: "raster-dem", url: "mapbox://mapbox.mapbox-terrain-dem-v1" });
-      map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
-      LIVE_CAMS.forEach((c) => {
-        const el = document.createElement("div");
-        el.innerHTML = '<div style="width:32px;height:32px;background:white;border-radius:9999px;display:flex;align-items:center;justify-content:center;cursor:pointer;">C</div>';
-        el.onclick = () => setSelectedCam(c);
-        new mapboxgl.Marker(el).setLngLat([c.lng, c.lat]).addTo(map);
-      });
-      setMapReady(true);
-    });
-    return () => { map.remove(); mapObj.current = null; };
-  }, []);
-
-  useEffect(() => {
-    if (!mapReady || !mapObj.current) return;
-    markers.current.forEach((m) => m.remove());
-    markers.current = [];
-    reports.forEach((r) => addReportMarker(mapObj.current!, r));
-  }, [reports, mapReady, addReportMarker]);
+  const [flyTo, setFlyTo] = useState<{ lng: number; lat: number } | null>(null);
 
   useEffect(() => {
     const sb = getSupabase();
@@ -103,7 +63,7 @@ export default function ScudoItalia() {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-black">
-      <div ref={mapRef} className="h-full w-full" />
+      <ItalyMap reports={reports} flyTo={flyTo} onCamClick={(id) => setSelectedCam(LIVE_CAMS.find((c) => c.id === id) ?? null)} />
       {weather.length > 0 && (
         <div className="absolute top-28 right-4 z-20 hidden max-h-[48vh] w-56 overflow-auto rounded-2xl border border-white/15 bg-black/55 p-3 text-white backdrop-blur-xl md:block">
           <p className="mb-2 text-xs font-bold uppercase text-white/70">Meteo Italia</p>
@@ -114,14 +74,6 @@ export default function ScudoItalia() {
               <span>{c.temp != null ? Math.round(c.temp) : "-"}&deg; · {c.hailRisk}</span>
             </div>
           ))}
-        </div>
-      )}
-      {tokenMissing && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black p-6">
-          <div className="max-w-lg rounded-[28px] border border-white/10 bg-white/5 p-6">
-            <p className="text-2xl font-black">SCUDO ITALIA</p>
-            <p className="mt-2 text-sm text-white/70">Aggiungi NEXT_PUBLIC_MAPBOX su Vercel per la mappa 3D. Meteo e push funzionano comunque.</p>
-          </div>
         </div>
       )}
       <motion.div initial={{ y: -50 }} animate={{ y: 0 }} className="pointer-events-none absolute top-4 right-4 left-4 z-20 flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -157,7 +109,7 @@ export default function ScudoItalia() {
           </div>
         </div>
       )}
-      {showForm && <ReportForm onClose={() => setShowForm(false)} onSubmitted={(r) => { setReports((p) => [{ id: r.id, lat: r.lat, lng: r.lng, size: r.size, intensity: r.intensity, user: r.user_name, time: "adesso", created_at: r.created_at }, ...p]); setShowForm(false); mapObj.current?.flyTo({ center: [r.lng, r.lat], zoom: 10, duration: 1200 }); }} />}
+      {showForm && <ReportForm onClose={() => setShowForm(false)} onSubmitted={(r) => { setReports((p) => [{ id: r.id, lat: r.lat, lng: r.lng, size: r.size, intensity: r.intensity, user: r.user_name, time: "adesso", created_at: r.created_at }, ...p]); setShowForm(false); setFlyTo({ lng: r.lng, lat: r.lat }); }} />}
     </div>
   );
 }
