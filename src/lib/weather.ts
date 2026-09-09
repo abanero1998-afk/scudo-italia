@@ -1,7 +1,7 @@
 export type CityWeather = {
   name: string; lat: number; lng: number;
-  temp: number | null; wind: number | null; precip: number | null;
-  precipProb: number | null; code: number | null; label: string;
+  temp: number | null; wind: number | null; windDir?: number | null;
+  precip: number | null; precipProb: number | null; code: number | null; label: string;
   hailRisk: "basso" | "medio" | "alto" | "estremo";
 };
 export type WeatherMood = "sole" | "variabile" | "brutto";
@@ -24,7 +24,7 @@ export function hailRisk(code: number | null, precipProb: number | null, wind: n
   return "basso";
 }
 export function weatherIcon(code: number | null) {
-  if (code == null) return "·";
+  if (code == null) return ".";
   if (code <= 1) return "sole";
   if (code === 2) return "nubi";
   if (code === 3 || code === 45 || code === 48) return "coperto";
