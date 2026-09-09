@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import ReportForm from "@/components/ReportForm";
 import ItalyMap from "@/components/ItalyMap";
 import WeatherBackdrop from "@/components/WeatherBackdrop";
-import { FALLBACK_REPORTS, LIVE_CAMS, relativeTime } from "@/lib/data";
+import { COVERED_PARKS, FALLBACK_REPORTS, LIVE_CAMS, SOS_ACTIONS, relativeTime } from "@/lib/data";
 import { getSupabase, isSupabaseConfigured, type HailReport } from "@/lib/supabase";
 import { italyMood, type CityWeather } from "@/lib/weather";
 
@@ -24,6 +24,23 @@ export default function ScudoItalia() {
   const [weather, setWeather] = useState<CityWeather[]>([]);
   const [wxAlerts, setWxAlerts] = useState<CityWeather[]>([]);
   const [flyTo, setFlyTo] = useState<{ lng: number; lat: number } | null>(null);
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
+
+  async function enablePush() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+    if ((await Notification.requestPermission()) !== "granted") return;
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "BLCQKE17jCEmR1gjJ-bFpxffTvuqyT_l9BEtVf-wXvsjB3f_PB8Oo3tZismezHev2K_ZP917qOiMzkoLZgRKZB4";
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const key = Uint8Array.from(atob(vapid.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    }
+    const json = sub.toJSON();
+    await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
+    setPushOn(true);
+  }
 
   useEffect(() => {
     const sb = getSupabase();
@@ -48,27 +65,26 @@ export default function ScudoItalia() {
     return () => clearInterval(id);
   }, []);
 
-  const mood = italyMood(weather);
-
-  async function enablePush() {
-    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
-    if ((await Notification.requestPermission()) !== "granted") return;
-    const reg = await navigator.serviceWorker.register("/sw.js");
-    await navigator.serviceWorker.ready;
-    const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "BLCQKE17jCEmR1gjJ-bFpxffTvuqyT_l9BEtVf-wXvsjB3f_PB8Oo3tZismezHev2K_ZP917qOiMzkoLZgRKZB4";
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      const key = Uint8Array.from(atob(vapid.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setUserPos(next);
+          setFlyTo(next);
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 12000 }
+      );
     }
-    const json = sub.toJSON();
-    await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
-    setPushOn(true);
-  }
+    void enablePush();
+  }, []);
+
+  const mood = italyMood(weather);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-black">
-      <ItalyMap reports={reports} weather={weather} flyTo={flyTo} onCamClick={(id) => setSelectedCam(LIVE_CAMS.find((c) => c.id === id) ?? null)} />
+      <ItalyMap reports={reports} weather={weather} mode={mode} userPos={userPos} flyTo={flyTo} onCamClick={(id) => setSelectedCam(LIVE_CAMS.find((c) => c.id === id) ?? null)} />
       <WeatherBackdrop mood={mood} />
       {weather.length > 0 && (
         <div className="absolute top-28 right-4 z-20 hidden max-h-[48vh] w-56 overflow-auto rounded-2xl border border-white/15 bg-black/55 p-3 text-white backdrop-blur-xl md:block">
@@ -87,7 +103,7 @@ export default function ScudoItalia() {
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white font-black text-black">S</div>
           <div>
             <p className="font-bold leading-none text-white">SCUDO ITALIA</p>
-            <p className="text-xs text-white/60">{mood === "sole" ? "bella giornata" : mood === "brutto" ? "temporali in corso" : "cielo variabile"} · {reports.length} segnalazioni</p>
+            <p className="text-xs text-white/60">{pushOn ? "push on" : "push"} · {userPos ? "gps on" : "gps"} · {reports.length}</p>
           </div>
           {(["grandine", "parcheggi", "sos"] as Mode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)} className={`rounded-full px-3 py-2 text-sm capitalize ${mode === m ? "bg-white text-black" : "bg-white/10 text-white"}`}>{m}</button>
@@ -99,13 +115,34 @@ export default function ScudoItalia() {
         </div>
       </motion.div>
       <div className="absolute bottom-4 left-4 z-20 w-[min(360px,calc(100%-2rem))] rounded-[24px] bg-white/95 p-4 text-black shadow-2xl">
-        <h3 className="mb-3 font-bold">{mode === "grandine" ? "Live ora sulla rete" : mode}</h3>
+        <h3 className="mb-3 font-bold">{mode === "grandine" ? "Live ora sulla rete" : mode === "parcheggi" ? "Parcheggi coperti" : "SOS"}</h3>
         {mode === "grandine" && reports.slice(0, 5).map((r) => (
           <div key={r.id} className="flex items-center justify-between border-b py-2 last:border-0">
             <div><p className="text-sm font-bold capitalize">{r.size}</p><p className="text-xs text-gray-500">{r.user} · {r.time}</p></div>
             <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-600">LIVE</span>
           </div>
         ))}
+        {mode === "parcheggi" && COVERED_PARKS.map((p) => (
+          <button key={p.id} onClick={() => setFlyTo({ lat: p.lat, lng: p.lng })} className="flex w-full items-center justify-between border-b py-2 text-left last:border-0">
+            <div><p className="text-sm font-bold">{p.name}</p><p className="text-xs text-gray-500">{p.city} · {p.spots} posti</p></div>
+            <span className="text-xs font-bold">APRI</span>
+          </button>
+        ))}
+        {mode === "sos" && (
+          <div className="space-y-2">
+            {SOS_ACTIONS.map((a) => (
+              <a key={a.id} href={a.href} className="flex items-center justify-between rounded-2xl bg-red-50 px-3 py-2">
+                <div><p className="text-sm font-bold text-red-700">{a.title}</p><p className="text-xs text-gray-500">{a.hint}</p></div>
+                <span className="text-xs font-black">CHIAMA</span>
+              </a>
+            ))}
+            <button onClick={() => { if (!userPos) return; const text = `SOS SCUDO ${userPos.lat},${userPos.lng}`; if (navigator.share) void navigator.share({ text }); else void navigator.clipboard.writeText(text); }} className="w-full rounded-full bg-black py-2 text-sm font-bold text-white">Condividi posizione</button>
+          </div>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button onClick={() => setMode("parcheggi")} className="rounded-full bg-black py-3 text-sm font-bold text-white">Parcheggio coperto</button>
+          <button onClick={() => setMode("sos")} className="rounded-full bg-gray-100 py-3 text-sm font-bold">SOS</button>
+        </div>
       </div>
       {selectedCam && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setSelectedCam(null)}>
