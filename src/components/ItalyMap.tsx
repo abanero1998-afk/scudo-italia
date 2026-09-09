@@ -4,7 +4,7 @@ import maplibregl, { type Map as MapLibreMap, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { COVERED_PARKS, LIVE_CAMS } from "@/lib/data";
 import type { CityWeather } from "@/lib/weather";
-import { weatherIcon } from "@/lib/weather";
+import { premiumWxIcon, weatherKind } from "@/lib/weather";
 
 export const ITALY_BOUNDS: [[number, number], [number, number]] = [[6.2, 35.4], [18.8, 47.2]];
 export const ITALY_CENTER: [number, number] = [12.5, 41.9];
@@ -29,8 +29,7 @@ const SAT_STYLE = {
   },
   layers: [
     { id: "sat", type: "raster" as const, source: "sat" },
-    { id: "labels", type: "raster" as const, source: "labels", paint: { "raster-opacity": 0.55 },
-    },
+    { id: "labels", type: "raster" as const, source: "labels", paint: { "raster-opacity": 0.55 } },
   ],
 };
 
@@ -141,9 +140,9 @@ export default function ItalyMap({ reports, weather = [], mode = "grandine", use
     wxMarkers.current = [];
     weather.forEach((c) => {
       const el = document.createElement("div");
-      const risk = c.hailRisk === "alto" || c.hailRisk === "estremo";
-      el.innerHTML = `<div class="wx-pin ${risk ? "wx-alert" : ""}"><span class="wx-ico">${weatherIcon(c.code)}</span><span class="wx-meta">${c.name}<br/>${c.temp != null ? Math.round(c.temp) + "°" : ""}</span></div>`;
-      wxMarkers.current.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([c.lng, c.lat]).addTo(map));
+      const kind = weatherKind(c.code, c.wind);
+      el.innerHTML = `<div class="wx-badge ${kind}" title="${c.name}">${premiumWxIcon(kind)}</div>`;
+      wxMarkers.current.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map));
     });
   }, [weather, ready]);
 
