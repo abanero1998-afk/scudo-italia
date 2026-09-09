@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import ReportForm from "@/components/ReportForm";
 import ItalyMap from "@/components/ItalyMap";
+import WeatherBackdrop from "@/components/WeatherBackdrop";
 import { FALLBACK_REPORTS, LIVE_CAMS, relativeTime } from "@/lib/data";
 import { getSupabase, isSupabaseConfigured, type HailReport } from "@/lib/supabase";
-import type { CityWeather } from "@/lib/weather";
+import { italyMood, type CityWeather } from "@/lib/weather";
 
 type Cam = (typeof LIVE_CAMS)[number];
 type Mode = "grandine" | "parcheggi" | "sos";
@@ -38,11 +39,16 @@ export default function ScudoItalia() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/weather").then((r) => r.json()).then((d) => {
+    const load = () => fetch("/api/weather").then((r) => r.json()).then((d) => {
       if (d.cities) setWeather(d.cities);
       if (d.alerts) setWxAlerts(d.alerts);
     }).catch(() => {});
+    load();
+    const id = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(id);
   }, []);
+
+  const mood = italyMood(weather);
 
   async function enablePush() {
     if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
@@ -57,16 +63,16 @@ export default function ScudoItalia() {
     }
     const json = sub.toJSON();
     await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
-    await fetch("/api/push/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "SCUDO ITALIA", body: "Push attive. Allerte grandine e meteo on." }) }).catch(() => {});
     setPushOn(true);
   }
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-black">
-      <ItalyMap reports={reports} flyTo={flyTo} onCamClick={(id) => setSelectedCam(LIVE_CAMS.find((c) => c.id === id) ?? null)} />
+      <ItalyMap reports={reports} weather={weather} flyTo={flyTo} onCamClick={(id) => setSelectedCam(LIVE_CAMS.find((c) => c.id === id) ?? null)} />
+      <WeatherBackdrop mood={mood} />
       {weather.length > 0 && (
         <div className="absolute top-28 right-4 z-20 hidden max-h-[48vh] w-56 overflow-auto rounded-2xl border border-white/15 bg-black/55 p-3 text-white backdrop-blur-xl md:block">
-          <p className="mb-2 text-xs font-bold uppercase text-white/70">Meteo Italia</p>
+          <p className="mb-2 text-xs font-bold uppercase text-white/70">Meteo Italia · {mood}</p>
           {wxAlerts.length > 0 && <p className="mb-2 rounded-lg bg-red-500/80 px-2 py-1 text-[11px] font-bold">Allerta: {wxAlerts.map((a) => a.name).join(", ")}</p>}
           {weather.map((c) => (
             <div key={c.name} className="flex justify-between border-b border-white/10 py-1.5 text-xs last:border-0">
@@ -81,7 +87,7 @@ export default function ScudoItalia() {
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white font-black text-black">S</div>
           <div>
             <p className="font-bold leading-none text-white">SCUDO ITALIA</p>
-            <p className="text-xs text-white/60">{reports.length} segnalazioni{isSupabaseConfigured ? " · live" : " · demo"}</p>
+            <p className="text-xs text-white/60">{mood === "sole" ? "bella giornata" : mood === "brutto" ? "temporali in corso" : "cielo variabile"} · {reports.length} segnalazioni</p>
           </div>
           {(["grandine", "parcheggi", "sos"] as Mode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)} className={`rounded-full px-3 py-2 text-sm capitalize ${mode === m ? "bg-white text-black" : "bg-white/10 text-white"}`}>{m}</button>
